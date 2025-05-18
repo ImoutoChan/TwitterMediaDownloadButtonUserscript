@@ -7,7 +7,7 @@
 // @grant       GM_xmlhttpRequest
 // @connect     *
 // @connect     pbs.twimg.com
-// @version     1.1.2
+// @version     1.2.0
 // @author      ImoutoChan
 // @description Downloads media (videos/images) from Twitter
 // @homepageURL https://github.com/ImoutoChan/TwitterMediaDownlowdButtonUserscript
