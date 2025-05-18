@@ -10,9 +10,9 @@
 // @version     1.2.0
 // @author      ImoutoChan
 // @description Downloads media (videos/images) from Twitter
-// @homepageURL https://github.com/ImoutoChan/TwitterMediaDownlowdButtonUserscript
-// @downloadURL https://github.com/ImoutoChan/TwitterMediaDownlowdButtonUserscript/raw/master/TwitterMediaDownlowdButton.user.js
-// @updateURL   https://github.com/ImoutoChan/TwitterMediaDownlowdButtonUserscript/raw/master/TwitterMediaDownlowdButton.user.js
+// @homepageURL https://github.com/ImoutoChan/TwitterMediaDownloadButtonUserscript
+// @downloadURL https://github.com/ImoutoChan/TwitterMediaDownloadButtonUserscript/raw/master/TwitterMediaDownloadButton.user.js
+// @updateURL   https://github.com/ImoutoChan/TwitterMediaDownloadButtonUserscript/raw/master/TwitterMediaDownloadButton.user.js
 // ==/UserScript==
 
 (function() {
