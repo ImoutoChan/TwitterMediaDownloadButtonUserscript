@@ -7,7 +7,7 @@
 // @grant       GM_xmlhttpRequest
 // @connect     *
 // @connect     pbs.twimg.com
-// @version     1.2.0
+// @version     1.3.0
 // @author      ImoutoChan
 // @description Downloads media (videos/images) from Twitter
 // @homepageURL https://github.com/ImoutoChan/TwitterMediaDownloadButtonUserscript
@@ -32,7 +32,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            width: 38.5px; 
+            width: 38.5px;
             height: 38.5px;
             border-radius: 9999px;
             transition-property: background-color, box-shadow;
@@ -102,7 +102,7 @@
                 }
             }
         }
-        
+
         if (tweetId === 'unknown_id') {
             const article = tweetNode.closest('article');
             const labelledBy = article ? article.getAttribute('aria-labelledby') : null;
@@ -116,7 +116,7 @@
                 }
             }
         }
-        
+
         if (username === 'unknown_user' && tweetId !== 'unknown_id') {
             const userNameElement = tweetNode.querySelector('[data-testid="User-Name"]');
             if (userNameElement) {
@@ -187,68 +187,81 @@
             event.preventDefault();
             handleDownload(tweetNode);
         });
-        
-        actionBar.appendChild(outerWrapper); 
+
+        actionBar.appendChild(outerWrapper);
     }
 
     async function handleDownload(tweetNode) {
         const { username, tweetId, tweetDate } = extractTweetInfo(tweetNode);
 
+        console.log(`[TMD] Download triggered for tweet: username=${username}, tweetId=${tweetId}, tweetDate=${tweetDate}`);
+
         if (tweetId === 'unknown_id') {
+            console.error("[TMD] Could not determine Tweet ID. Cannot proceed with download.");
             alert("Could not determine Tweet ID. Cannot proceed with download. Check console.");
             return;
         }
 
         const videoElements = Array.from(tweetNode.querySelectorAll('video'));
+        console.log(`[TMD] Found ${videoElements.length} <video> elements.`);
+
         let downloadedViaApiOrDirectly = false;
 
         for (let i = 0; i < videoElements.length; i++) {
             const videoEl = videoElements[i];
-            let videoUrl = videoEl.src;
-            if (!videoUrl) {
-                const sourceEl = videoEl.querySelector('source');
-                if (sourceEl) videoUrl = sourceEl.src;
+            let videoUrl = videoEl.src || (videoEl.querySelector('source')?.src || null);
+
+            console.log(`[TMD] Video #${i + 1}: raw src =`, videoEl.src);
+            if (!videoUrl && videoEl.querySelector('source')) {
+                console.log(`[TMD] Video #${i + 1}: fallback source =`, videoEl.querySelector('source').src);
             }
 
             if (videoUrl) {
                 if (videoUrl.startsWith('blob:')) {
-                    console.warn(`[TMD] Video source is a blob URL. Attempting API lookup for tweet ID: ${tweetId}`);
+                    console.warn(`[TMD] Video #${i + 1} is a blob URL. Will attempt API lookup.`);
+
                     const ct0 = getCookie("ct0");
                     if (!ct0) {
                         console.error("[TMD] ct0 cookie not found. Cannot make API call for blob video.");
                         alert("Twitter login token (ct0 cookie) not found. API lookup failed.");
                         continue;
                     }
-                    
+
                     try {
+                        console.log(`[TMD] Fetching direct video URL from API for tweetId: ${tweetId}`);
                         const directVideoUrl = await fetchVideoUrlFromAPI(tweetId, ct0);
+
                         if (directVideoUrl) {
                             const filename = generateFilename(username, tweetId, tweetDate, 'mp4', i, videoElements.length);
-                            console.log(`[TMD] API: Downloading video as ${filename}`);
+                            console.log(`[TMD] API provided direct video URL: ${directVideoUrl}`);
+                            console.log(`[TMD] Downloading video #${i + 1} as ${filename}`);
                             triggerDownload(directVideoUrl, filename);
                             downloadedViaApiOrDirectly = true;
                         } else {
-                            console.warn(`[TMD] API lookup did not yield a downloadable video URL for tweet ID ${tweetId}.`);
+                            console.warn(`[TMD] API returned null for tweetId ${tweetId}`);
                         }
                     } catch (error) {
-                        console.error(`[TMD] Error during API lookup for tweet ID ${tweetId}:`, error);
+                        console.error(`[TMD] Exception during API lookup:`, error);
                         alert(`Error during API lookup for video. Check console. ${error.message || ''}`);
                     }
-                    return; 
+
+                    return;
                 }
+
                 const filename = generateFilename(username, tweetId, tweetDate, 'mp4', i, videoElements.length);
+                console.log(`[TMD] Downloading direct video #${i + 1} from ${videoUrl} as ${filename}`);
                 triggerDownload(videoUrl, filename);
                 downloadedViaApiOrDirectly = true;
             } else {
-                console.warn(`[TMD] Could not find src for video element ${i + 1}:`, videoEl);
+                console.warn(`[TMD] Video #${i + 1} has no usable src.`);
             }
         }
 
-        if (downloadedViaApiOrDirectly) {
-            return; 
-        }
-        
+        if (downloadedViaApiOrDirectly) return;
+
         const imageElements = Array.from(tweetNode.querySelectorAll('img[src*="pbs.twimg.com/media/"]'));
+        console.log(`[TMD] Found ${imageElements.length} image elements.`);
+
         let downloadedImage = false;
         if (imageElements.length > 0) {
             for (let i = 0; i < imageElements.length; i++) {
@@ -260,12 +273,14 @@
                         url.searchParams.set('name', 'orig');
                         imageUrl = url.toString();
                     } catch (e) {
-                        console.error(`[TMD] Failed to modify image URL ${imageUrl}:`, e);
+                        console.error(`[TMD] Failed to enhance image URL ${imageUrl}:`, e);
                     }
 
                     const extensionMatch = imageUrl.match(/format=([a-zA-Z]+)/);
                     const extension = extensionMatch && extensionMatch[1] ? extensionMatch[1] : 'jpg';
                     const filename = generateFilename(username, tweetId, tweetDate, extension, i, imageElements.length);
+
+                    console.log(`[TMD] Downloading image #${i + 1} from ${imageUrl} as ${filename}`);
                     triggerDownload(imageUrl, filename);
                     downloadedImage = true;
                 }
@@ -288,15 +303,17 @@
     }
 
     async function fetchVideoUrlFromAPI(tweetId, ct0Token) {
+        console.log("[TMD] [API] Starting fetchVideoUrlFromAPI...");
+
         if (!tweetId || tweetId === 'unknown_id') {
-            console.error("[TMD] Invalid tweetId for API call.");
+            console.error("[TMD] [API] Invalid tweetId for API call:", tweetId);
             return null;
         }
         if (!ct0Token) {
-            console.error("[TMD] ct0Token is missing for API call.");
+            console.error("[TMD] [API] ct0Token is missing for API call.");
             return null;
         }
-    
+
         const variables = {
             focalTweetId: tweetId,
             with_rux_injections: false,
@@ -307,7 +324,7 @@
             withVoice: true,
             withV2Timeline: true,
         };
-    
+
         const features = {
             rweb_lists_timeline_redesign_enabled: true,
             responsive_web_graphql_exclude_directive_enabled: true,
@@ -327,20 +344,22 @@
             tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
             longform_notetweets_rich_text_read_enabled: true,
             longform_notetweets_inline_media_enabled: true,
-            responsive_web_media_download_video_enabled: false, 
+            responsive_web_media_download_video_enabled: false,
             responsive_web_enhance_cards_enabled: false,
         };
-        
+
         const fieldToggles = {
-            withAuxiliaryUserLabels:false,
-            withArticleRichContentState:false
+            withAuxiliaryUserLabels: false,
+            withArticleRichContentState: false
         };
-    
+
         const apiUrl = `https://x.com/i/api/graphql/${GRAPHQL_TWEET_DETAIL_ID}/TweetDetail` +
-                    `?variables=${encodeURIComponent(JSON.stringify(variables))}` +
-                    `&features=${encodeURIComponent(JSON.stringify(features))}` +
-                    `&fieldToggles=${encodeURIComponent(JSON.stringify(fieldToggles))}`;
-    
+              `?variables=${encodeURIComponent(JSON.stringify(variables))}` +
+              `&features=${encodeURIComponent(JSON.stringify(features))}` +
+              `&fieldToggles=${encodeURIComponent(JSON.stringify(fieldToggles))}`;
+
+        console.log("[TMD] [API] Sending request to:", apiUrl);
+
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: "GET",
@@ -355,85 +374,95 @@
                     "x-twitter-auth-type": "OAuth2Session",
                     "x-twitter-client-language": navigator.language.split('-')[0] || "en",
                     "x-twitter-active-user": "yes",
-                    "Sec-Fetch-Dest": "empty",
-                    "Sec-Fetch-Mode": "cors",
-                    "Sec-Fetch-Site": "same-origin",
                 },
                 onload: function(response) {
+                    console.log("[TMD] [API] Response status:", response.status);
                     if (response.status >= 200 && response.status < 300) {
                         try {
                             const data = JSON.parse(response.responseText);
+                            console.log("[TMD] [API] Parsed JSON response:", data);
 
-                            const entries = data?.data?.threaded_conversation_with_injections_v2?.instructions?.[0]?.entries;
+                            const instructions = data?.data?.threaded_conversation_with_injections_v2?.instructions;
+                            const addEntries = instructions?.find(instr => instr.type === "TimelineAddEntries");
+                            const entries = addEntries?.entries;
                             if (!entries) {
-                                console.warn("[TMD] Could not find 'entries' in API response.", data);
+                                console.warn("[TMD] [API] No entries found in response.");
                                 resolve(null);
                                 return;
                             }
 
+                            console.log(`[TMD] [API] Found ${entries.length} entries. Looking for tweetId: ${tweetId}`);
                             let tweetResult = null;
+
                             for (const entry of entries) {
                                 if (entry.entryId.includes(`tweet-${tweetId}`)) {
-                                tweetResult = entry.content?.itemContent?.tweet_results?.result;
-                                break;
+                                    tweetResult = entry.content?.itemContent?.tweet_results?.result;
+                                    console.log("[TMD] [API] Found matching entry:", tweetResult);
+                                    break;
                                 }
                             }
-                            
+
                             if (!tweetResult && entries[0]?.content?.itemContent?.tweet_results?.result) {
                                 tweetResult = entries[0].content.itemContent.tweet_results.result;
+                                console.log("[TMD] [API] Using fallback tweetResult:", tweetResult);
+
                                 if (tweetResult?.legacy?.id_str !== tweetId && tweetResult?.rest_id !== tweetId) {
-                                    console.warn("[TMD] Fallback tweet does not match target tweet ID.");
-                                    tweetResult = null; 
+                                    console.warn("[TMD] [API] Fallback tweet does not match target tweet ID.");
+                                    tweetResult = null;
                                 }
                             }
 
                             if (!tweetResult) {
-                                console.warn("[TMD] Could not find tweet_results.result in API response for tweetId:", tweetId, data);
+                                console.warn("[TMD] [API] Could not find tweetResult for tweetId:", tweetId);
                                 resolve(null);
                                 return;
                             }
-                            
-                            const tweetData = tweetResult.tweet || tweetResult;
 
+                            const tweetData = tweetResult.tweet || tweetResult;
                             const media = tweetData?.legacy?.extended_entities?.media;
+
                             if (media && media.length > 0) {
                                 for (const medium of media) {
                                     if (medium.type === "video" || medium.type === "animated_gif") {
                                         const variants = medium.video_info?.variants;
+                                        console.log("[TMD] [API] Found video variants:", variants);
+
                                         if (variants && variants.length > 0) {
                                             const mp4Variants = variants
-                                                .filter(v => v.content_type === "video/mp4" && v.url)
-                                                .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-                                            
+                                            .filter(v => v.content_type === "video/mp4" && v.url)
+                                            .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+
                                             if (mp4Variants.length > 0) {
-                                                resolve(mp4Variants[0].url); 
+                                                console.log("[TMD] [API] Selected video URL:", mp4Variants[0].url);
+                                                resolve(mp4Variants[0].url);
                                                 return;
                                             }
                                         }
                                     }
                                 }
                             }
-                            console.warn("[TMD] No suitable video URL found in API media entities for tweetId:", tweetId, tweetData);
+
+                            console.warn("[TMD] [API] No suitable video URL found in media.");
                             resolve(null);
                         } catch (e) {
-                            console.error("[TMD] Error parsing API response JSON:", e, response.responseText);
+                            console.error("[TMD] [API] Error parsing API response:", e);
                             reject(new Error("Error parsing API response."));
                         }
                     } else {
-                        console.error("[TMD] API request failed with status:", response.status, response.statusText, response.responseText);
+                        console.error("[TMD] [API] Request failed:", response.status, response.statusText, response.responseText);
                         reject(new Error(`API request failed: ${response.status} ${response.statusText}`));
                     }
                 },
                 onerror: function(error) {
-                    console.error("[TMD] GM_xmlhttpRequest error:", error);
+                    console.error("[TMD] [API] Network error during API request:", error);
                     reject(new Error("Network error during API request."));
                 }
             });
         });
     }
-    
+
     function triggerDownload(url, filename) {
-        fallbackDownload(url, filename); 
+        fallbackDownload(url, filename);
     }
 
     function fallbackDownload(url, filename){
@@ -446,7 +475,7 @@
                     try {
                         const blob = response.response;
                         const blobUrl = URL.createObjectURL(blob);
-                        
+
                         const a = document.createElement('a');
                         a.href = blobUrl;
                         a.download = filename;
@@ -454,7 +483,7 @@
                         a.style.display = 'none';
                         a.click();
                         document.body.removeChild(a);
-                        
+
                         setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
                     } catch (e) {
                         console.error("[TMD] Fallback: Error processing blob for download:", e);
@@ -471,8 +500,8 @@
             }
         });
     }
-    
-    function observeTweets() {   
+
+    function observeTweets() {
         const observer = new MutationObserver((mutationsList) => {
             for (const mutation of mutationsList) {
                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
@@ -493,8 +522,8 @@
     }
 
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(observeTweets, 1000); 
+        setTimeout(observeTweets, 1000);
     } else {
         document.addEventListener('DOMContentLoaded', observeTweets);
     }
-})(); 
+})();
